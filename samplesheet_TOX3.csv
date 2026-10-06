@@ -1,4 +1,0 @@
-patient,status,sample,lane,fastq_1,fastq_2
-TOX3-DDPD-1119,1,TOX3-DDPD-1119_S3_L001,1,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1119_S3_L001_R1_001.fastq.gz,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1119_S3_L001_R2_001.fastq.gz
-TOX3-DDPD-1120,1,TOX3-DDPD-1120_S4_L001,1,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1120_S4_L001_R1_001.fastq.gz,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1120_S4_L001_R2_001.fastq.gz
-TOX3-DDPD-1121,1,TOX3-DDPD-1121_S5_L001,1,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1121_S5_L001_R1_001.fastq.gz,/media/scratch0/nextflow_targetseq_pipeline/rawdata/TOX3-DDPD-1121_S5_L001_R2_001.fastq.gz
