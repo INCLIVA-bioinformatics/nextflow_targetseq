@@ -1,9 +1,11 @@
-include { FASTQC          as FASTQC_RAW                } from "${params.modules_path}/fastqc/main"
-include { FASTQC          as FASTQC_PREPROCESSED       } from "${params.modules_path}/fastqc/main"
+include { FASTQC          as FASTQC_RAW                } from '../modules/nf-core/fastqc/main'
+include { FASTQC          as FASTQC_PREPROCESSED       } from '../modules/nf-core/fastqc/main'
+
 // include { UMITOOLS_EXTRACT                             } from "${params.modules_path}/umitools/extract/main"
-include { CUTADAPT        as CUTADAPT_TRIMMING         } from "${params.modules_path}/cutadapt/main"
-include { CUTADAPT        as CUTADAPT_FILTER_BY_PRIMER } from "${params.modules_path}/cutadapt/main"
-include { PRINSEQPLUSPLUS as PRINSEQ                   } from "${params.modules_path}/prinseqplusplus/main" // TODO - Estudiar si utilizar FASTP en su lugar, ya que prinseq puede estar anticuado
+
+include { CUTADAPT        as CUTADAPT_TRIMMING         } from '../modules/incliva/cutadapt/main'
+include { CUTADAPT        as CUTADAPT_FILTER_BY_PRIMER } from '../modules/incliva/cutadapt/main'
+include { PRINSEQ as PRINSEQ                   } from '../modules/incliva/prinseq/main' // TODO - Estudiar si utilizar FASTP en su lugar, ya que prinseq puede estar anticuado
 
 workflow PREPROCESSING {
     take:

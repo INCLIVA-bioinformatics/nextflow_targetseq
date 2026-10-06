@@ -1,0 +1,6 @@
+name: cutadapt
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - bioconda::prinseq-lite=0.20.4

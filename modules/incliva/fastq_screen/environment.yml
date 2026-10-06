@@ -1,0 +1,6 @@
+name: cutadapt
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - bioconda::fastq-screen=0.4.7

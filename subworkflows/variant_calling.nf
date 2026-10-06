@@ -1,24 +1,24 @@
-include { GATK4_MUTECT2                                          } from "${params.modules_path}/gatk4/mutect2/main"
-include { GATK4_FILTERMUTECTCALLS                                } from "${params.modules_path}/gatk4/filtermutectcalls/main"
-include { BCFTOOLS_NORM as BCFTOOLS_NORM_MUTECT2                 } from "${params.modules_path}/bcftools/norm/main"
-include { BCFTOOLS_NORM as BCFTOOLS_NORM_LOFREQ                  } from "${params.modules_path}/bcftools/norm/main"
-include { INC_SELECT_VARIANTS_GATK                               } from "${params.incliva_modules_path}"
-include { INC_SELECT_VARIANTS_LOFREQ                             } from "${params.incliva_modules_path}"
-include { INC_ANNOTATE_BAM_INFO as INC_ANNOTATE_BAM_INFO_MUTECT2 } from "${params.incliva_modules_path}"
-include { INC_ANNOTATE_BAM_INFO as INC_ANNOTATE_BAM_INFO_LOFREQ  } from "${params.incliva_modules_path}"
-include { VCFLIB_VCFUNIQ as VCFLIB_VCFUNIQ_MUTECT2               } from "${params.modules_path}/vcflib/vcfuniq/main"
-include { VCFLIB_VCFUNIQ as VCFLIB_VCFUNIQ_LOFREQ                } from "${params.modules_path}/vcflib/vcfuniq/main"
-include { BCFTOOLS_SORT as BCFTOOLS_SORT_MUTECT2                 } from "${params.modules_path}/bcftools/sort/main"
-include { BCFTOOLS_SORT as BCFTOOLS_SORT_LOFREQ                  } from "${params.modules_path}/bcftools/sort/main"
-include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_MUTECT2           } from "${params.modules_path}/tabix/bgziptabix/main"
-include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_LOFREQ            } from "${params.modules_path}/tabix/bgziptabix/main"
-include { TABIX_BGZIP                                            } from "${params.modules_path}/tabix/bgzip/main"
-include { TABIX_TABIX                                            } from "${params.modules_path}/tabix/tabix/main"
-include { TABIX_TABIX as INDEX_MUTECT2_VCF                       } from "${params.modules_path}/tabix/tabix/main"
-include { TABIX_TABIX as INDEX_LOFREQ_VCF                        } from "${params.modules_path}/tabix/tabix/main"
-include { LOFREQ_CALLPARALLEL                                    } from "${params.modules_path}/lofreq/callparallel/main"
-include { INC_ANNOTATE_FORMAT_LOFREQ                             } from "${params.incliva_modules_path}"
-include { BCFTOOLS_CONCAT                                        } from "${params.modules_path}/bcftools/concat/main"
+include { GATK4_MUTECT2                                          } from '../modules/nf-core/gatk4/mutect2/main'
+include { GATK4_FILTERMUTECTCALLS                                } from '../modules/nf-core/gatk4/filtermutectcalls/main'
+include { BCFTOOLS_NORM as BCFTOOLS_NORM_MUTECT2                 } from '../modules/nf-core/bcftools/norm/main'
+include { BCFTOOLS_NORM as BCFTOOLS_NORM_LOFREQ                  } from '../modules/nf-core/bcftools/norm/main'
+include { INC_SELECT_VARIANTS_GATK                               } from '../incliva_modules'
+include { INC_SELECT_VARIANTS_LOFREQ                             } from '../incliva_modules'
+include { INC_ANNOTATE_BAM_INFO as INC_ANNOTATE_BAM_INFO_MUTECT2 } from '../incliva_modules'
+include { INC_ANNOTATE_BAM_INFO as INC_ANNOTATE_BAM_INFO_LOFREQ  } from '../incliva_modules'
+include { VCFLIB_VCFUNIQ as VCFLIB_VCFUNIQ_MUTECT2               } from '../modules/incliva/vcflib/vcfuniq/main'
+include { VCFLIB_VCFUNIQ as VCFLIB_VCFUNIQ_LOFREQ                } from '../modules/incliva/vcflib/vcfuniq/main'
+include { BCFTOOLS_SORT as BCFTOOLS_SORT_MUTECT2                 } from '../modules/nf-core/bcftools/sort/main'
+include { BCFTOOLS_SORT as BCFTOOLS_SORT_LOFREQ                  } from '../modules/nf-core/bcftools/sort/main'
+include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_MUTECT2           } from '../modules/nf-core/tabix/bgziptabix/main'
+include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_LOFREQ            } from '../modules/nf-core/tabix/bgziptabix/main'
+//include { TABIX_BGZIPTABIX as TABIX_BGZIP                                            } from "/mnt/zonahpc/home/bioinformatica/comun/software/sarek_fork_INCLIVA/nf-core/tabix/bgziptabix/main"
+include { TABIX_TABIX                                            } from '../modules/nf-core/tabix/tabix/main'
+include { TABIX_TABIX as INDEX_MUTECT2_VCF                       } from '../modules/nf-core/tabix/tabix/main'
+include { TABIX_TABIX as INDEX_LOFREQ_VCF                        } from '../modules/nf-core/tabix/tabix/main'
+include { LOFREQ_CALLPARALLEL                                    } from '../modules/nf-core/lofreq/callparallel/main'
+include { INC_ANNOTATE_FORMAT_LOFREQ                             } from '../incliva_modules'
+include { BCFTOOLS_CONCAT                                        } from '../modules/nf-core/bcftools/concat/main'
 
 workflow VARIANT_CALLING {
     take:
@@ -33,9 +33,17 @@ workflow VARIANT_CALLING {
     main:
     // Se preparan canales para los callers
     bam_vcf = postprocessed_bam.join(postprocessed_bai).join(covered_regions)
-    fasta_vc = fasta.map{ fasta -> [ [ id:fasta.baseName ], fasta ] }
-    fasta_fai_vc = fasta_fai.map{ fasta_fai -> [ [ id:fasta_fai.baseName ], fasta_fai ] }
-    dict_vc = dict.map{ dict -> [ [ id:dict.baseName ], dict ] }
+    fasta_vc = fasta.map { f ->
+        [ [ id: f.baseName ], f ]
+    }
+    
+    fasta_fai_vc = fasta_fai.map { fai ->
+    [ [ id: fai.baseName ], fai ]
+    }
+
+    dict_vc = dict.map { d ->
+        [ [ id: d.baseName ], d ]
+    }
     germline_resource = Channel.value([]) // channel required for mutect2
     germline_resource_tbi = Channel.value([]) // channel required for mutect2
     panel_of_normals = Channel.value([]) // channel required for mutect2
@@ -76,8 +84,11 @@ workflow VARIANT_CALLING {
 
     TABIX_BGZIPTABIX_MUTECT2(INC_ANNOTATE_BAM_INFO_MUTECT2.out.bam_info)
 
-    selected_mutect2_variants = TABIX_BGZIPTABIX_MUTECT2.out.gz_tbi
-    versions = versions.mix(TABIX_BGZIPTABIX_MUTECT2.out.versions.first())
+    selected_mutect2_variants = TABIX_BGZIPTABIX_MUTECT2.out.gz_index
+    //versions = versions.mix(TABIX_BGZIPTABIX_MUTECT2.out.versions.first())
+    versions = versions
+        .mix(TABIX_BGZIPTABIX_MUTECT2.out.versions_tabix)
+        .mix(TABIX_BGZIPTABIX_MUTECT2.out.versions_bgzip)
 
     // Se eliminan variantes duplicadas y se ordena el vcf resultante final de Mutect2
     VCFLIB_VCFUNIQ_MUTECT2(selected_mutect2_variants)
@@ -86,7 +97,7 @@ workflow VARIANT_CALLING {
     BCFTOOLS_SORT_MUTECT2(VCFLIB_VCFUNIQ_MUTECT2.out.vcf)
 
     sorted_mutect2_vcf = BCFTOOLS_SORT_MUTECT2.out.vcf
-    versions = versions.mix(BCFTOOLS_SORT_MUTECT2.out.versions.first())
+    //versions = versions.mix(BCFTOOLS_SORT_MUTECT2.out.versions.first())
 
     INDEX_MUTECT2_VCF(sorted_mutect2_vcf)
 
@@ -95,7 +106,11 @@ workflow VARIANT_CALLING {
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     PASO 3-B: VARIANT CALLING (LOFREQ) // TODO - Crear subworkflows para cada uno de los callers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-    LOFREQ_CALLPARALLEL(bam_vcf, fasta, fasta_fai)
+    def fasta_meta = fasta.map { f -> [ [id: 'genome'], f ] }
+    def fai_meta   = fasta_fai.map { f -> [ [id: 'genome'], f ] }
+
+    LOFREQ_CALLPARALLEL(bam_vcf, fasta_meta, fai_meta)
+    //LOFREQ_CALLPARALLEL(bam_vcf, fasta, fasta_fai)
 
     raw_lofreq_vcf = LOFREQ_CALLPARALLEL.out.vcf.map{ meta, vcf -> [ meta + [ data_type:'vcf' ], vcf] } // Actualizar meta.data_type ya que ahora tenemos vcf.
     versions = versions.mix(LOFREQ_CALLPARALLEL.out.versions.first())
@@ -114,7 +129,10 @@ workflow VARIANT_CALLING {
 
     TABIX_BGZIPTABIX_LOFREQ(INC_ANNOTATE_BAM_INFO_LOFREQ.out.bam_info)
 
-    selected_lofreq_variants = TABIX_BGZIPTABIX_LOFREQ.out.gz_tbi
+    selected_lofreq_variants = TABIX_BGZIPTABIX_LOFREQ.out.gz_index
+    versions = versions
+        .mix(TABIX_BGZIPTABIX_LOFREQ.out.versions_tabix)
+        .mix(TABIX_BGZIPTABIX_LOFREQ.out.versions_bgzip)
 
     // Se eliminan variantes duplicadas y se ordena el vcf resultante final de Lofreq
     VCFLIB_VCFUNIQ_LOFREQ(selected_lofreq_variants)
@@ -135,16 +153,20 @@ workflow VARIANT_CALLING {
     if (params.amplicon) {
         // TODO - python inc_gatk_realiable Low_confidence
         // TODO - python inc_gatk_realiable High_confidence
-        calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map{ meta, mutect2, mutect2_tbi, lofreq, lofreq_tbi -> [ meta, [ mutect2, lofreq ], [ mutect2_tbi, lofreq_tbi ] ] }
-
+        calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map { m, vcf_m, tbi_m, vcf_l, tbi_l ->
+        [ m, [ vcf_m, vcf_l ], [ tbi_m, tbi_l ] ]
+    }
+    
         BCFTOOLS_CONCAT(calls_ch)
 
         isected_vcf = BCFTOOLS_CONCAT.out.vcf
         versions = versions.mix(BCFTOOLS_CONCAT.out.versions.first())
 
     } else {
-        calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map{ meta, mutect2, mutect2_tbi, lofreq, lofreq_tbi -> [ meta, [ mutect2, lofreq ], [ mutect2_tbi, lofreq_tbi ] ] }
-
+    calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map { m, vcf_m, tbi_m, vcf_l, tbi_l ->
+            [ m, [ vcf_m, vcf_l ], [ tbi_m, tbi_l ] ]
+        }
+        
         BCFTOOLS_CONCAT(calls_ch)
 
         isected_vcf = BCFTOOLS_CONCAT.out.vcf
