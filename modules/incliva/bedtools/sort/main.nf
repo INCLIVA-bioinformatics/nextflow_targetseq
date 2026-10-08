@@ -14,8 +14,11 @@ process BEDTOOLS_SORT {
     path "versions.yml", emit: versions
 
     script:
+    //    sort -k1,1 -k2,2n ${bed} > ${meta.id}.sorted.bed
+
     """
-    sort -k1,1 -k2,2n ${bed} > ${meta.id}.sorted.bed
+    bedtools sort -i ${bed} > ${meta.id}.sorted.bed
+
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

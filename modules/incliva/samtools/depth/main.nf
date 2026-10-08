@@ -19,7 +19,7 @@ process SAMTOOLS_DEPTH {
 
     """
     samtools depth \\
-        -d 999999999 \\
+        -d 9898989898 \\
         -a \\
         -b ${bed} \\
         ${bam} \\
