@@ -3,15 +3,18 @@ process GET_COVERED_BED {
     label 'process_single'
 
     conda "bioconda::bedtools=2.30.0"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bedtools:2.30.0--hc088bd4_0' :
-        'biocontainers/bedtools:2.30.0--hc088bd4_0' }"
+    // container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+    //     'https://depot.galaxyproject.org/singularity/bedtools:2.30.0----he941832_1' :
+    //     'biocontainers/bedtools:2.30.0----he941832_1' }"
+    //container 'biocontainers/bedtools:2.30.0----he941832_1'
 
     input:
     tuple val(meta), path(depth_tsv)
 
     output:
     tuple val(meta), path("*_covered_regions_${params.cov}x.bed"), emit: covered_regions
+    tuple val(meta), path("*_non_covered_${params.cov}x.bed"), emit: non_covered
+
     path "versions.yml"                                          , emit: versions
 
     script:
@@ -19,6 +22,7 @@ process GET_COVERED_BED {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     awk '{if (\$3 >= '${params.cov}') print \$1"\t"\$2-1"\t"\$2}' ${depth_tsv} | bedtools merge ${args} > ${prefix}_covered_regions_${params.cov}x.bed
+    bedtools subtract -a ${params.target_intervals} -b ${prefix}_covered_regions_${params.cov}x.bed > ${prefix}_non_covered_${params.cov}x.bed
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -30,7 +34,7 @@ process GET_COVERED_BED {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     touch ${prefix}_covered_regions_${params.cov}x.bed
-
+    touch ${prefix}_non_covered_${params.cov}x.bed
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         bedtools: \$(bedtools --version | sed -e "s/bedtools v//g")

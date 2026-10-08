@@ -20,6 +20,7 @@ include { LOFREQ_CALLPARALLEL                                    } from '../modu
 include { INC_ANNOTATE_FORMAT_LOFREQ                             } from '../incliva_modules'
 include { BCFTOOLS_CONCAT                                        } from '../modules/nf-core/bcftools/concat/main'
 
+
 workflow VARIANT_CALLING {
     take:
     postprocessed_bam

@@ -10,6 +10,7 @@
  * inside this repository and replace absolute paths with relative paths.
  */
 
+
 include { BWAMEM2_MEM as BWAMEM2 } from '../modules/nf-core/bwamem2/mem/main'
 
 include { PICARD_CLEANSAM } from '../modules/incliva/picard/cleansam/main'
@@ -51,10 +52,10 @@ workflow MAPPING_POSTPROCESSING {
 
     main:
     /*
-     * PASO 1: Mapeado con BWA-MEM2
+     * PASO 1: Mapeado con BWA-MEM2. MAPEADO DE LAS READS CONTRA UN GENOMA DE REFERENCIA
      */
 
-    sort_bam = true
+    sort_bam = true // reads will be sorted
 
     index = bwamem2.map { index_files ->
         [
@@ -76,6 +77,7 @@ workflow MAPPING_POSTPROCESSING {
     known_sites_meta     = known_sites.map { f -> [ [id:'known_sites'], f ] }
     known_sites_tbi_meta = known_sites_tbi.map { f -> [ [id:'known_sites_tbi'], f ] }
 
+    // Mapeado contra genoma de referencia
     BWAMEM2(
         preprocessed_reads,
         index,
@@ -100,19 +102,19 @@ workflow MAPPING_POSTPROCESSING {
 
     processed_bam = PICARD_CLEANSAM.out.bam
     versions = versions.mix(PICARD_CLEANSAM.out.versions.first())
-
+    // Indexamos el archivo bam procesado
     INDEX_PROCESSED_BAM(processed_bam)
 
-    processed_bai = INDEX_PROCESSED_BAM.out.bai
+    processed_bai = INDEX_PROCESSED_BAM.out.bai // Actualizar meta.data_type ya que ahora tenemos bam
     versions = versions.mix(INDEX_PROCESSED_BAM.out.versions.first())
 
     processed_bam_bai = processed_bam.join(
         processed_bai,
         failOnMismatch: true
     )
-
+    // Combine bam and intervals for spread and gather strategy
     processed_bam_bai_intervals = processed_bam_bai.combine(intervals)
-
+    // Calcular tabla de recalibración
     GATK4_BASERECALIBRATOR(
         processed_bam_bai_intervals,
         fasta_meta,
@@ -136,7 +138,7 @@ workflow MAPPING_POSTPROCESSING {
                 interval_file
             ]
         }
-
+    // Aplicamos recalibración
     GATK4_APPLYBQSR(
         bam_to_recalibrate,
         fasta,
@@ -146,7 +148,7 @@ workflow MAPPING_POSTPROCESSING {
 
     recalibrated_bam = GATK4_APPLYBQSR.out.bam
     versions = versions.mix(GATK4_APPLYBQSR.out.versions.first())
-
+    /// Add indel qualities
     LOFREQ_INDELQUAL(
         recalibrated_bam,
         fasta_reference
@@ -154,13 +156,13 @@ workflow MAPPING_POSTPROCESSING {
 
     postprocessed_bam = LOFREQ_INDELQUAL.out.bam
     versions = versions.mix(LOFREQ_INDELQUAL.out.versions.first())
-
+    // Index final bam
     INDEX_POSTPROCESSED_BAM(postprocessed_bam)
 
     postprocessed_bai = INDEX_POSTPROCESSED_BAM.out.bai
     versions = versions.mix(INDEX_POSTPROCESSED_BAM.out.versions.first())
-
-    qname = Channel.value([])
+   // En este punto ya se ha creado el bam recalibrado sobre el que llevar a cabo el variant calling (postprocessed_bam)
+    qname = Channel.value([]) // channel required for readnames in samtools view
     index_format = Channel.value('bai')
 
     SAMTOOLS_VIEW_ONTARGET(
@@ -172,7 +174,7 @@ workflow MAPPING_POSTPROCESSING {
 
     ontarget_processed_bam = SAMTOOLS_VIEW_ONTARGET.out.bam
     versions = versions.mix(SAMTOOLS_VIEW_ONTARGET.out.versions.first())
-
+    // Se ordena el archivo target.bed
     target_to_sort = target.map { target_bed ->
         [
             [id: target_bed.baseName],
@@ -190,9 +192,9 @@ workflow MAPPING_POSTPROCESSING {
     }
 
     versions = versions.mix(BEDTOOLS_SORT.out.versions.first())
-
+    // Se mergean los intervalos de target_sorted.bed para crear target_sorted_merged.bed
     BEDTOOLS_MERGE(target_sorted)
-
+    
     target_sorted_merged = BEDTOOLS_MERGE.out.bed.map { meta, bed ->
         [
             [id: meta.id],
@@ -202,14 +204,19 @@ workflow MAPPING_POSTPROCESSING {
 
     versions = versions.mix(BEDTOOLS_MERGE.out.versions.first())
 
+    def bed_path = target_sorted_merged.first().last()  // Extraer el path
+
+    // Calculamos la cobertura de las posiciones del panel en la muestra
     SAMTOOLS_DEPTH(
         postprocessed_bam,
-        target_sorted_merged
+        bed_path
     )
+
 
     sample_intervals_depth = SAMTOOLS_DEPTH.out.tsv
     versions = versions.mix(SAMTOOLS_DEPTH.out.versions.first())
 
+    // Se obtiene el covered_regions.bed de cada muestra (archivo bed con aquellas regiones del panel que superan la cobertura deseada)
     GET_COVERED_BED(sample_intervals_depth)
 
     covered_regions = GET_COVERED_BED.out.covered_regions
