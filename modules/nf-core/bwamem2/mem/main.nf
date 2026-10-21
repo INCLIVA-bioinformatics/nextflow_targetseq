@@ -27,6 +27,8 @@ process BWAMEM2_MEM {
     script:
     def args = task.ext.args ?: ''
     def args2 = task.ext.args2 ?: ''
+    // INCLIVA: args3 -> filtro con samtools view antes de ordenar (p.ej. -q MAPQ, como rutina.sh)
+    def filter_command = task.ext.args3 ? "samtools view -u ${task.ext.args3} - |" : ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     def samtools_command = sort_bam ? 'sort' : 'view'
 
@@ -45,7 +47,7 @@ process BWAMEM2_MEM {
         -t $task.cpus \\
         \$INDEX \\
         $reads \\
-        | samtools $samtools_command $args2 -@ $task.cpus ${reference} -o ${prefix}.${extension} -
+        | $filter_command samtools $samtools_command $args2 -@ $task.cpus ${reference} -o ${prefix}.${extension} -
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -15,6 +15,12 @@ include { BWAMEM2_MEM as BWAMEM2 } from '../modules/nf-core/bwamem2/mem/main'
 
 include { PICARD_CLEANSAM } from '../modules/incliva/picard/cleansam/main'
 
+include { PICARD_MARKDUPLICATES } from '../modules/incliva/picard/markduplicates/main'
+
+include { BAMCLIPPER } from '../modules/incliva/bamclipper/main'
+
+include { SAMTOOLS_INDEX as INDEX_SORTED_BAM } from '../modules/nf-core/samtools/index/main'
+
 include { SAMTOOLS_DEPTH } from '../modules/incliva/samtools/depth/main'
 
 include { SAMTOOLS_INDEX as INDEX_PROCESSED_BAM } from '../modules/nf-core/samtools/index/main'
@@ -98,7 +104,28 @@ workflow MAPPING_POSTPROCESSING {
      * PASO 2: Postprocesado del BAM
      */
 
-    PICARD_CLEANSAM(sorted_bam)
+    // TODO - UMIs: rutina.sh usa umi_tools dedup cuando has_umi = yes
+    if (params.amplicon) {
+        // Amplicones: soft-clipping de primers con BAMClipper (no se eliminan duplicados)
+        INDEX_SORTED_BAM(sorted_bam)
+        versions = versions.mix(INDEX_SORTED_BAM.out.versions.first())
+
+        BAMCLIPPER(
+            sorted_bam.join(INDEX_SORTED_BAM.out.bai, failOnMismatch: true),
+            file(params.amplicons_bedpe, checkIfExists: true)
+        )
+
+        deduplicated_bam = BAMCLIPPER.out.bam
+        versions = versions.mix(BAMCLIPPER.out.versions.first())
+    } else {
+        // Captura: eliminación de duplicados con Picard MarkDuplicates
+        PICARD_MARKDUPLICATES(sorted_bam)
+
+        deduplicated_bam = PICARD_MARKDUPLICATES.out.bam
+        versions = versions.mix(PICARD_MARKDUPLICATES.out.versions.first())
+    }
+
+    PICARD_CLEANSAM(deduplicated_bam)
 
     processed_bam = PICARD_CLEANSAM.out.bam
     versions = versions.mix(PICARD_CLEANSAM.out.versions.first())
@@ -127,15 +154,16 @@ workflow MAPPING_POSTPROCESSING {
     recalibration_table = GATK4_BASERECALIBRATOR.out.table
     versions = versions.mix(GATK4_BASERECALIBRATOR.out.versions.first())
 
-    bam_to_recalibrate = processed_bam_bai_intervals
+    // ApplyBQSR sin intervalos (igual que rutina.sh): se recalibra el BAM completo
+    bam_to_recalibrate = processed_bam_bai
         .join(recalibration_table, failOnMismatch: true)
-        .map { meta, bam, bai, interval_file, bqsr_table ->
+        .map { meta, bam, bai, bqsr_table ->
             [
                 meta,
                 bam,
                 bai,
                 bqsr_table,
-                interval_file
+                []
             ]
         }
     // Aplicamos recalibración

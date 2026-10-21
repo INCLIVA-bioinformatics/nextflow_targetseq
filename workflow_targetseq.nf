@@ -124,7 +124,8 @@ workflow {
         : Channel.empty()
 
     def bwamem2 = params.bwamem2
-        ? Channel.fromPath(params.bwamem2 + '*', checkIfExists: true).collect()
+        // Solo ficheros del índice: el FASTA puede estar en el mismo directorio y colisionaría con params.fasta
+        ? Channel.fromPath(params.bwamem2 + '.{0123,amb,ann,bwt.2bit.64,pac}', checkIfExists: true).collect()
         : Channel.empty()
 
     def intervals = params.intervals
@@ -337,13 +338,9 @@ def extract_csv(csv_file) {
             def fastq_1 = file(row.fastq_1, checkIfExists: true)
             def fastq_2 = file(row.fastq_2, checkIfExists: true)
 
-            def cn = params.seq_center ? "CN:${params.seq_center}\\t" : ''
-            def flowcell = flowcellLaneFromFastq(fastq_1)
-
+            // Read group idéntico al de rutina.sh (ID fijo AgilentXTHS)
             meta.read_group =
-                "\"@RG\\tID:${flowcell}.${row.sample}.${row.lane}\\t${cn}" +
-                "PU:${row.lane}\\tSM:${row.sample}\\tLB:${row.sample}" +
-                "\\tDS:${params.fasta}\\tPL:${params.seq_platform}\""
+                "\"@RG\\tID:AgilentXTHS\\tSM:${row.sample}\\tPL:Illumina_${params.seq_platform}\""
 
             return [meta, fastq_1, fastq_2]
         }
