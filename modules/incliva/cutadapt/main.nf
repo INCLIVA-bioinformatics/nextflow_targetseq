@@ -4,7 +4,8 @@ process CUTADAPT {
     label 'process_medium'
 
     //conda "${moduleDir}/environment.yml"
-    container 'quay.io/biocontainers/cutadapt:4.9--py311haab0aaa_3'
+    // Misma versión que rutina.sh (4.1): con 4.9 el filtrado por primers deja pasar lecturas que 4.1 descarta
+    container 'quay.io/biocontainers/cutadapt:4.1--py310h1425a21_1'
 
     input:
     tuple val(meta), path(reads)
