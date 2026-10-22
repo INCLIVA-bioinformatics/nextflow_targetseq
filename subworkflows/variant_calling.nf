@@ -177,5 +177,7 @@ workflow VARIANT_CALLING {
     // python inc_reformat_genotype
     // python inc_check_empty_vcf
 
-    // emit:
+    emit:
+    vcf = isected_vcf // VCF combinado por muestra (Mutect2 + LoFreq)
+    versions
 }

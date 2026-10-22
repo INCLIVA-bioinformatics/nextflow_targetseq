@@ -29,6 +29,8 @@ include { SAMTOOLS_INDEX as INDEX_POSTPROCESSED_BAM } from '../modules/nf-core/s
 
 include { SAMTOOLS_VIEW as SAMTOOLS_VIEW_ONTARGET } from '../modules/nf-core/samtools/view/main'
 
+include { SAMTOOLS_VIEW as SAMTOOLS_VIEW_ONTARGET_SORTED } from '../modules/nf-core/samtools/view/main'
+
 include { GATK4_BASERECALIBRATOR } from '../modules/nf-core/gatk4/baserecalibrator/main'
 
 include { GATK4_APPLYBQSR } from '../modules/nf-core/gatk4/applybqsr/main'
@@ -100,6 +102,17 @@ workflow MAPPING_POSTPROCESSING {
 
     versions = versions.mix(BWAMEM2.out.versions.first())
 
+    // BAM on-target sin postprocesar (ontarget_<sample>_sorted.bam en rutina.sh), sólo para estadísticas (Kit_specificity)
+    SAMTOOLS_VIEW_ONTARGET_SORTED(
+        sorted_bam.map { meta, bam -> [ meta, bam, [] ] },
+        fasta_reference,
+        [],
+        ''
+    )
+
+    ontarget_sorted_bam = SAMTOOLS_VIEW_ONTARGET_SORTED.out.bam
+    versions = versions.mix(SAMTOOLS_VIEW_ONTARGET_SORTED.out.versions.first())
+
     /*
      * PASO 2: Postprocesado del BAM
      */
@@ -116,12 +129,14 @@ workflow MAPPING_POSTPROCESSING {
         )
 
         deduplicated_bam = BAMCLIPPER.out.bam
+        dedup_metrics = Channel.empty() // Sin MarkDuplicates en amplicones (rutina.sh: %DuplicateReads = 0)
         versions = versions.mix(BAMCLIPPER.out.versions.first())
     } else {
         // Captura: eliminación de duplicados con Picard MarkDuplicates
         PICARD_MARKDUPLICATES(sorted_bam)
 
         deduplicated_bam = PICARD_MARKDUPLICATES.out.bam
+        dedup_metrics = PICARD_MARKDUPLICATES.out.metrics
         versions = versions.mix(PICARD_MARKDUPLICATES.out.versions.first())
     }
 
@@ -233,6 +248,7 @@ workflow MAPPING_POSTPROCESSING {
     versions = versions.mix(BEDTOOLS_MERGE.out.versions.first())
 
     def bed_path = target_sorted_merged.first().last()  // Extraer el path
+    target_merged_bed = bed_path
 
     // Calculamos la cobertura de las posiciones del panel en la muestra
     SAMTOOLS_DEPTH(
@@ -255,5 +271,12 @@ workflow MAPPING_POSTPROCESSING {
     postprocessed_bai
     ontarget_processed_bam
     covered_regions
+    // Para estadísticas
+    sorted_bam
+    ontarget_sorted_bam
+    dedup_metrics
+    sample_intervals_depth
+    non_covered = GET_COVERED_BED.out.non_covered
+    target_merged_bed
     versions
 }

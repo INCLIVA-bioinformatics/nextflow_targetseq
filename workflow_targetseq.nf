@@ -65,6 +65,7 @@
 include { PREPROCESSING          } from './subworkflows/preprocessing'
 include { MAPPING_POSTPROCESSING } from './subworkflows/mapping_postprocessing'
 include { VARIANT_CALLING        } from './subworkflows/variant_calling'
+include { STATISTICS             } from './subworkflows/statistics'
 
 workflow {
 
@@ -219,6 +220,29 @@ workflow {
         covered_regions,
         versions
     )
+
+    versions = VARIANT_CALLING.out.versions
+
+    STATISTICS(
+        samples,
+        preprocessed_reads,
+        MAPPING_POSTPROCESSING.out.sorted_bam,
+        MAPPING_POSTPROCESSING.out.ontarget_sorted_bam,
+        MAPPING_POSTPROCESSING.out.ontarget_processed_bam,
+        MAPPING_POSTPROCESSING.out.dedup_metrics,
+        postprocessed_bam,
+        postprocessed_bai,
+        MAPPING_POSTPROCESSING.out.sample_intervals_depth,
+        MAPPING_POSTPROCESSING.out.non_covered,
+        VARIANT_CALLING.out.vcf,
+        MAPPING_POSTPROCESSING.out.target_merged_bed,
+        fasta,
+        fasta_fai,
+        dict,
+        versions
+    )
+
+    versions = STATISTICS.out.versions
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
