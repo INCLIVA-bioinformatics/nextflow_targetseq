@@ -1,0 +1,17 @@
+# Entorno para los scripts de estadísticas de rutina (python3 y R).
+# samtools 1.17 y bedtools son los que los scripts llaman directamente (samtools 1.17 = rutina.sh).
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - samtools=1.17
+  - bedtools=2.30.0
+  - bc
+  - gawk
+  - r-base=4.3
+  - r-xtable
+  - r-ggplot2
+  - r-dplyr
+  - r-data.table
