@@ -4,7 +4,6 @@ zdelete_configs_bash_rutina_to_be_deleted/
 databases/
 directorio_pruebas_paneles/
 work/
-bin/
 outputs_rutina/
 rutina.sh
 scripts_rutina_stats/
