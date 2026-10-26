@@ -1,0 +1,258 @@
+# -*- coding: utf-8 -*-
+import os
+import re
+import argparse
+from bisect import bisect_left, bisect_right
+
+# v1.1: misma salida que v1.0, con dos cambios:
+#   - el diseño del panel es un argumento opcional (v1.0 lo tenía fijo en /nfs/home/panel_designs/TP53/, que se
+#     mantiene como valor por defecto)
+#   - el SAM de cada muestra se recorre una sola vez (y no una vez por amplicón): las lecturas se agrupan por
+#     cromosoma con su posición y longitud (máximo de la CIGAR), y para cada amplicón se buscan por posición
+
+def check_dir(dir):
+    '''
+    This function check if the directory given by the user
+    ends with the properly character
+    '''
+    if dir[-1] == "/":
+        dir = dir
+    else:
+        dir = dir + "/"
+
+    return dir
+
+def dir_exists(dir):
+    '''
+    This function checks if the directory given by the user
+    exists
+    '''
+    if os.path.exists(dir):
+        pass
+    else:
+        print ("ERROR: The entry directory path is wrong," \
+            " please check the configuration file")
+
+
+def parse_Ex3(infile, outfile):
+    file_depth = open(infile, 'rb')
+    f_depth = file_depth.readlines()
+    file_depth.close()
+
+    ant = 0
+    min = 0
+    for line in f_depth:
+        line = line.rstrip()
+        values = line.split("\t")
+        min = float(values[3])
+        break
+
+    for line in f_depth:
+        line = line.rstrip()
+        values = line.split("\t")
+
+        min2 = min * 0.75
+        if int(values[3]) < min and (min * 0.75) < int(values[3]):
+            min = float(values[3])
+
+    outfile_depth = open(
+        outfile,
+        'wb')
+    for line in f_depth:
+        line = line.rstrip()
+        values = line.split("\t")
+
+        if values[2] == "7676326" or values[2] == "7676327" or values[2] == "7676328" or values[
+            2] == "7676329" or values[2] == "7676330" or \
+                values[2] == "7676331" or values[2] == "7676332" or values[2] == "7676333" or values[
+            2] == "7676334" or values[2] == "7676335" or \
+                values[2] == "7676336" or values[2] == "7676337" or values[2] == "7676338" or values[
+            2] == "7676339" or values[2] == "7676340" or \
+                values[2] == "7676341":
+            if (min * 0.75) > int(values[3]):
+                outfile_depth.write(values[0] + "\t" + values[1] + "\t" + values[2] + "\t" + str(int(min)) + "\n")
+            else:
+                outfile_depth.write(line + "\n")
+
+        else:
+            outfile_depth.write(line + "\n")
+
+    outfile_depth.close()
+
+    os.system("mv " + outfile + " " + infile)
+
+
+# Several arguments are needed to run the python script
+parser = argparse.ArgumentParser()
+# Arguments are added to the parser
+parser.add_argument("dir", help="Input directory", type=str)
+parser.add_argument("name", help="First sample name", type=str)
+parser.add_argument("cov", help="Minimum coverage value to consider a region covered", type=str)
+parser.add_argument("panel", help="Panel path", type=str, nargs="?", default="/nfs/home/panel_designs/TP53/")
+args = parser.parse_args()
+
+dir = args.dir
+dir = check_dir(dir)
+dir_exists(dir)
+panel = check_dir(args.panel)
+os.system("mkdir -p " + dir + "amplicons")
+os.system("mkdir -p " + dir + "amplicons/def")
+
+i = 0
+for bam in os.listdir(dir + "/mapping/"):
+    if bam.endswith(".bam"):
+        name = bam.split(".")[0]
+        os.system("samtools view -h " + dir + "/mapping/" + bam + " > " + dir + "amplicons/" + name + ".sam")
+    else:
+        continue
+
+    file = open(dir + "amplicons/" + name + ".sam", 'rb')
+    f = file.readlines()
+    file.close()
+
+    p_file = open(panel + "capture_amplicons.bed", 'rb')
+    p_f = p_file.readlines()
+    p_file.close()
+
+
+
+    header = []
+    reads = {}
+    for l in f:
+        l = l.rstrip()
+        if l.startswith("@"):
+            header.append(l)
+        else:
+            values2 = l.split("\t")
+            long = [int(s) for s in re.findall(r'-?\d+\.?\d*', values2[5])]
+            if len(long) == 0:
+                continue
+            reads.setdefault(values2[2], []).append((int(values2[3]), max(long), l))
+    # Las líneas ya están en reads: se libera el SAM leído para no tenerlo dos veces en memoria
+    del f
+    positions = {}
+    for chrom, chrom_reads in reads.items():
+        pos = [r[0] for r in chrom_reads]
+        # El BAM está ordenado por coordenada; si no lo estuviera, se recorren todas las lecturas del cromosoma
+        positions[chrom] = pos if all(pos[k] <= pos[k + 1] for k in range(len(pos) - 1)) else None
+
+    for line in p_f:
+        line = line.rstrip()
+        values = line.split("\t")
+
+        outfile = open(dir + "amplicons/" + name + "_" + values[3] + ".sam", 'wb')
+        for l in header:
+            outfile.write(l + "\n")
+
+        start = int(values[1]) - 50
+        end = int(values[2]) + 50
+        chrom_reads = reads.get(values[0], [])
+        pos = positions.get(values[0])
+        if pos is not None:
+            # start2 >= start y end2 = start2 + lon <= end => start <= start2 <= end
+            chrom_reads = chrom_reads[bisect_left(pos, start):bisect_right(pos, end)]
+        for start2, lon, l in chrom_reads:
+            end2 = start2 + lon
+            if start2 >= start and end2 <= end:
+                outfile.write(l + "\n")
+
+        outfile.close()
+
+
+        os.system("samtools view -Sb " + dir + "amplicons/" + name + "_" + values[3] + ".sam > " + dir + "amplicons/" + name + "_" + values[3] + ".bam")
+        os.system("samtools index " + dir + "amplicons/" + name + "_" + values[3] + ".bam")
+        os.system("samtools depth -d 9898989898 -a " + dir + "amplicons/" + name + "_" + values[3] + ".bam -r " +
+                  values[0] + ":" + str(int(values[1]) + 1) + "-" + str(int(values[2])) +
+                  " | awk '{print $1" + '"\\t"$2-1"\\t"$2"\\t"$3}' + "' > " + dir + "amplicons/" + name + "_" + values[3] + "_amplicons_depth")
+
+        if values[3] == "TP53-Ex3N":
+            parse_Ex3(dir + "amplicons/" + name + "_" + values[3] + "_amplicons_depth", dir + "amplicons/" + name + "_" + values[3] + "_amplicons_depth_mod")
+
+        amplicons = {}
+        amplicons[values[0] + "_" + values[1] + "_" + values[2] + "_" + values[3]] = [0, 9898989898, 0, 0]
+
+        file3 = open(dir + "amplicons/" + name + "_" + values[3] + "_amplicons_depth", 'rb')
+        f3 = file3.readlines()
+        file3.close()
+
+
+        if len(f3) == 0:
+            outfile = open(dir + "amplicons/" + name + "_" + values[3] + "_amplicons_stats", 'wb')
+            outfile.write(values[0] + "\t" + values[1] + "\t" + values[2] + "\t" + values[3] + "\t" +
+                          "0" + "\t" + "0.0" + "\t" + "0" + "\t" + "0" + "\n")
+            outfile.close()
+            continue
+
+        for line3 in f3:
+
+            line3 = line3.rstrip()
+            values3 = line3.split("\t")
+            for amplicon in amplicons.keys():
+                stats = amplicon.split("_")
+                if values3[0] == stats[0]:
+                    if int(values3[3]) < amplicons[amplicon][1] and values3[2] <= stats[2] and values3[2] >= stats[1]:
+                        amplicons[amplicon][1] = int(values3[3])
+
+                    if int(values3[3]) > amplicons[amplicon][2] and values3[2] <= stats[2] and values3[2] >= stats[1]:
+                        amplicons[amplicon][2] = int(values3[3])
+
+                    if int(values3[3]) >= int(args.cov):
+                        if values3[2] <= stats[2] and values3[2] >= stats[1]:
+                            amplicons[amplicon][0] += 1
+                    if values3[2] <= stats[2] and values3[2] >= stats[1]:
+                        amplicons[amplicon][3] += 1
+
+        outfile = open(dir + "amplicons/" + name + "_" + values[3] + "_amplicons_stats", 'wb')
+        for key, value in amplicons.items():
+            stats = key.split("_")
+            perc = str(round(float(value[0]) / value[3], 2))
+
+            outfile.write(stats[0] + "\t" + stats[1] + "\t" + stats[2] + "\t" + stats[3] + "\t" + str(value[0]) + "\t" +
+                          perc + "\t" + str(value[1]) + "\t" + str(value[2]) + "\n")
+
+        outfile.close()
+
+    del reads, positions
+
+    sample = name
+    type = "TP53"
+
+    os.system("cat " + dir + "amplicons/" + name + "*stats > " + dir + "amplicons/" + name + "_amplicons_stats")
+
+    if name == args.name:
+        os.system("echo '#Amplicon\\tChr\\tAmp_Start\\tAmp_End\\t#Amplicon_Nts_Covered (" + sample + ")\\t%Amplicon_Covered "
+                      "(" + sample + ")\\tMin_Amp_Depth (" + sample + ")\\tMax_Amp_Depth (" + sample + ")' "
+                      "> " + dir + "amplicons/" + "def/" + name + "_amplicons_stats_tmp")
+
+        os.system("bedtools sort -i " + dir + "amplicons/" + name + "_amplicons_stats |"
+                " awk '{print $4" + '"\\t"$1"\\t"$2"\\t"$3"\\t"$5"\\t"$6"\\t"$7"\\t"$8}' + "' >> " +
+                  dir + "amplicons/" + "def/" + name + "_amplicons_stats_tmp")
+
+    else:
+        os.system(
+            "echo '#Amplicon_Nts_Covered (" + sample + ")\\t%Amplicon_Covered "
+                       "(" + sample + ")\\tMin_Amp_Depth (" + sample + ")\\tMax_Amp_Depth (" + sample + ")' "
+                       "> " + dir + "amplicons/" + "def/" + name + "_amplicons_stats_tmp")
+
+        os.system("bedtools sort -i " + dir + "amplicons/" + name + "_amplicons_stats |"
+                                                     " awk '{print $5" + '"\\t"$6"\\t"$7"\\t"$8}' + "' >> " +
+                  dir + "amplicons/" + "def/" + name + "_amplicons_stats_tmp")
+
+    os.system("mv " + dir + "amplicons/" + "def/" + name + "_amplicons_stats_tmp " + dir + "amplicons/" + "def/" + name + "_amplicons_stats")
+
+    i += 1
+
+
+files = []
+for file in os.listdir(dir + "amplicons/def/"):
+    if file.endswith("_amplicons_stats"):
+        files.append(os.path.join(dir + "amplicons/def/", file))
+
+name = dir.split("/")[-3]
+print name
+
+os.system("paste -d '\\t' " + " ".join(
+    sorted(files)) + " > " + dir + "amplicons/def/" + name + "_" + type + "_stats_by_amplicon.tsv")
+os.system("rm " + dir + "amplicons/" + "*")
+
+os.system("cp " + dir + "amplicons/def/" + name + "_" + type + "_stats_by_amplicon.tsv " + dir + "QC/mapping")

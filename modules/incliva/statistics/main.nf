@@ -240,10 +240,12 @@ process NON_COVERED_REGIONS {
 // PROCESS: STATS_BY_AMPLICON
 // ==========================================
 // Sólo paneles de amplicones. Igual que rutina.sh:
-//   - BRCA (params.brca): inc_amplicons_BRCA_universal_v1.0.py → <corrida>_BRCA_stats_by_amplicon.tsv
+//   - BRCA (params.brca): inc_amplicons_BRCA_universal_v1.1.py → <corrida>_BRCA_stats_by_amplicon.tsv
+//     (v1.1 = v1.0 de rutina con la misma salida, pero recorre el SAM una vez por muestra y no una vez por amplicón)
+//   - TP53 (params.panel == 'TP53'): inc_amplicons_TP53_universal_v1.1.py → <corrida>_TP53_stats_by_amplicon.tsv
+//     (v1.1 = v1.0 de rutina con la misma salida: misma optimización y el diseño del panel como argumento)
 //   - resto:              inc_amplicons_cover_v1.2_mod.py      → <corrida>_<panel>_stats_by_amplicon.tsv
-// (rutina.sh usa inc_amplicons_TP53_universal para el panel TP53, que no está portado.)
-// Ambos scripts son python2.
+// Todos los scripts son python2.
 // Los scripts escriben la cabecera con os.system("echo '...\\t...'"): en el servidor de rutina /bin/sh es
 // dash y su echo convierte \t en tabulador; aquí /bin/sh es bash, así que se activa xpg_echo para que haga lo mismo.
 process STATS_BY_AMPLICON {
@@ -265,7 +267,9 @@ process STATS_BY_AMPLICON {
     // Orden alfabético, como "ls ${analysis_dir}/mapping/*bam" en rutina: la primera muestra lleva las
     // columnas del amplicón y el resto se pegan detrás (paste de los ficheros ordenados).
     def samples = [ids, [bams].flatten(), [bais].flatten()].transpose().sort { it[0] }
-    if (params.brca) {
+    if (params.brca || params.panel == 'TP53') {
+        // rutina.sh: BRCA = yes → script de BRCA; si no, panel TP53 → script de TP53
+        def type = params.brca ? 'BRCA' : 'TP53'
         def links = samples.collect { id, bam, bai ->
             "ln -s \$PWD/${bam} ${name}/analysis/mapping/${id}.bam\n    ln -s \$PWD/${bai} ${name}/analysis/mapping/${id}.bam.bai"
         }.join('\n    ')
@@ -274,13 +278,13 @@ process STATS_BY_AMPLICON {
         mkdir -p ${name}/analysis/mapping ${name}/analysis/QC/mapping
         ${links}
 
-        env BASHOPTS=xpg_echo python2 ${projectDir}/bin/inc_amplicons_BRCA_universal_v1.0.py \\
+        env BASHOPTS=xpg_echo python2 ${projectDir}/bin/inc_amplicons_${type}_universal_v1.1.py \\
             \$PWD/${name}/analysis \\
             ${samples[0][0]} \\
             ${params.cov} \\
             \$PWD/${panel_design}
 
-        cp ${name}/analysis/QC/mapping/${name}_BRCA_stats_by_amplicon.tsv .
+        cp ${name}/analysis/QC/mapping/${name}_${type}_stats_by_amplicon.tsv .
 
         cat <<-END_VERSIONS > versions.yml
         "${task.process}":

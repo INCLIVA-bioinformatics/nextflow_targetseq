@@ -36,6 +36,17 @@ El pipeline procesa FASTQ de paneles de genes en tres subworkflows:
 
 Para reproducir los resultados de la rutina bash se fijan las mismas versiones de GATK (4.4.0.0) y LoFreq (2.1.3.1), el mismo read group (`ID:AgilentXTHS`) y el tamaño de lote de BWA-MEM2 (`-K`), de modo que el resultado no depende del número de CPUs.
 
+### Scripts de rutina modificados
+
+Los scripts de `bin/` son los de la rutina, salvo los de estadísticas por amplicón, que se han modificado sin cambiar su salida (`STATS_BY_AMPLICON` en `modules/incliva/statistics/main.nf`):
+
+| Script del pipeline | Script de rutina | Se usa en |
+|---|---|---|
+| `bin/inc_amplicons_BRCA_universal_v1.1.py` | `inc_amplicons_BRCA_universal_v1.0.py` | Paneles con `brca = true` (BRC2) |
+| `bin/inc_amplicons_TP53_universal_v1.1.py` | `inc_amplicons_TP53_universal_v1.0.py` | Panel TP53 |
+
+- **Optimización (ambos scripts).** Para cada muestra, la versión de rutina recorría el SAM completo una vez por cada amplicón del panel (en BRC2, alrededor de un millón de lecturas por muestra, leídas 219 veces). La v1.1 lee el SAM una sola vez por muestra, agrupa las lecturas por cromosoma con su posición y su longitud (el máximo de la CIGAR) y, para cada amplicón, busca solo las lecturas que caen en su rango. Los criterios de selección no cambian (margen de ±40 pb en BRCA y ±50 pb en TP53; en BRCA, longitud de al menos el 60 % del amplicón), ni el cálculo posterior de profundidad y estadísticas. En BRC2, `STATS_BY_AMPLICON` pasa de 28,5 min a 1 min, con un TSV idéntico byte a byte al de la v1.0.
+
 ## Requisitos
 
 - Linux con Slurm (executor definido en `config/base.config`).
