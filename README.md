@@ -1,8 +1,8 @@
 # INCLIVA Target-seq pipeline (Nextflow)
 
-Pipeline de rutina para análisis de paneles de secuenciación dirigida (target-seq), adaptado a Nextflow (DSL2) a partir del script bash de rutina (`rutina.sh`). Está basado en una versión modificada de nf-core/Sarek.
+Pipeline de rutina para análisis de paneles de secuenciación dirigida (target-seq), adaptado a Nextflow (DSL2) a partir del script bash de rutina (`inc_pipe_for_panels_only_tumors.sh`). Está basado en una versión modificada de nf-core/Sarek.
 
-**Versión:** 1.0.0
+**Versión:** 1.2.0
 
 ## Descripción
 
@@ -27,6 +27,12 @@ El pipeline procesa FASTQ de paneles de genes en tres subworkflows:
    - Mutect2 + FilterMutectCalls y LoFreq.
    - Normalización, selección de variantes, anotación con información del BAM, ordenación e indexado.
    - Unión de los VCF de ambos callers en un VCF final por muestra.
+   - Unión de los VCF de todas las muestras en un VCF multi-muestra del run (`bcftools merge`).
+   - **Anotación** (`subworkflows/annotation.nf`, equivalente a `annotate_variants` de la rutina; solo si se indica `vep_cache`):
+     - VEP 110 con SpliceAI (`spliceai_cutoff`).
+     - Cancer hotspots, COSMIC v91 (con paso del ID de COSMIC a la anotación), mixed_db, base de datos interna (`inc_db`), conservación y OncoKB (SnpSift).
+     - Eliminación de registros duplicados (vcfuniq) y conversión a CSV (aminoácidos en código de una letra; tránscritos de `list_of_transcripts` si el panel la tiene).
+     - Matriz de variantes compartidas entre muestras (`sample_contamination.csv`) y CSV de variantes por muestra.
 
 Para reproducir los resultados de la rutina bash se fijan las mismas versiones de GATK (4.4.0.0) y LoFreq (2.1.3.1), el mismo read group (`ID:AgilentXTHS`) y el tamaño de lote de BWA-MEM2 (`-K`), de modo que el resultado no depende del número de CPUs.
 
@@ -34,7 +40,7 @@ Para reproducir los resultados de la rutina bash se fijan las mismas versiones d
 
 - Linux con Slurm (executor definido en `config/base.config`).
 - [Nextflow](https://www.nextflow.io/) (DSL2).
-- Conda/Mamba y Singularity (o Docker).
+- Conda/Mamba y Singularity.
 - Entorno conda: `sarek_nf`.
 - Referencias del genoma (GRCh38) y ficheros del panel, definidos en el fichero de configuración del panel.
 
@@ -64,6 +70,9 @@ Para reproducir los resultados de la rutina bash se fijan las mismas versiones d
 | TOX3  | Amplicones | Sí (error 0.3)       | BAMClipper (19/19)                | `panels/panel_configs/conf_TOX3.config` |
 | BRC2  | Amplicones | Sí (error 0.2)       | BAMClipper (18/18)                | `panels/panel_configs/conf_BRC2.config` |
 | ONC4  | Captura    | No                   | Picard MarkDuplicates             | `panels/panel_configs/conf_ONC4.config` |
+| TP53  | Amplicones | Sí (error 0.3)       | BAMClipper (18/18)                | `panels/panel_configs/conf_TP53.config` |
+
+TP53 usa `af = 0.01` (Proyecto HEMATO). Para muestras de Oncocarta, lánzalo con `--af 0.02`.
 
 Cada diseño en `panels/panel_designs/<PANEL>/` contiene, entre otros, `capture.bed`, `target.bed` y, para paneles de amplicones, `R1_primers.fasta`, `R2_primers.fasta` y `amplicons.pe.bed` (usado por BAMClipper).
 
@@ -167,9 +176,9 @@ Dentro de `outdir`:
 | Directorio          | Contenido                                                       |
 |---------------------|-----------------------------------------------------------------|
 | `QC/rawdata/`       | Informes FastQC (html y zip) por muestra                         |
-| `QC/mapping/`       | BED de regiones cubiertas y no cubiertas a `cov` x por muestra (`<sample>_covered_regions_<cov>x.bed`, `<sample>_non_covered_<cov>x.bed`) |
+| `QC/mapping/`       | BED de regiones cubiertas y no cubiertas a `cov` x por muestra (`<sample>_covered_regions_<cov>x.bed`, `<sample>_non_covered_<cov>x.bed`); con anotación, `<study_name>_sample_contamination.csv` |
 | `mapping/`          | BAM y BAI finales por muestra y `versions.yml`                   |
-| `variant_calling/`  | VCF final por muestra                                            |
+| `variant_calling/`  | VCF final por muestra y VCF multi-muestra del run; con anotación, además `<study_name>_annotated.vcf.gz`, `<study_name>_annotated.csv` y un CSV por muestra |
 | `pipeline_info/`    | Informes de ejecución de Nextflow (report, timeline, trace, DAG) |
 
 Por defecto los ficheros se publican como enlaces simbólicos (`publish_dir_mode = "symlink"`) al directorio `work/`. Si se va a borrar `work/`, usa `publish_dir_mode = "copy"`.
@@ -215,8 +224,6 @@ Las bases de datos están en el clúster (no se suben a Git):
 
 Este pipeline es una adaptación inicial a Nextflow (DSL2) de la rutina bash. Las siguientes mejoras están previstas para futuras versiones:
 
-- **Más paneles.** Actualmente se incluyen TOX3, BRC2 y ONC4. Se añadirán el resto de paneles usados en la rutina.
-- **Módulo de estadísticas.** Implementar un proceso/subworkflow que genere las mismas estadísticas que la rutina (cobertura por región, lecturas mapeadas, duplicados, inserción, etc.) y los plots asociados.
+- **Más paneles.** Actualmente se incluyen TOX3, BRC2, ONC4 y TP53. Se añadirán el resto de paneles usados en la rutina.
 - **Soporte completo de UMIs.** Añadir el manejo de UMIs (umi_tools o fgbio) en preprocesado y deduplicación, con parámetros `has_umi` y `umi_nt` equivalentes a la rutina.
-- **Combinación de VCFs en amplicones.** Completar la lógica de confianza (High/Low confidence) entre Mutect2 y LoFreq de la rutina.
-- **VCFs anotados.** Actualmente el pipeline obtiene los VCF sin anotar; añadir los VCF anotados (VEP) y los CSV por muestra.
+- **MultiQC**
