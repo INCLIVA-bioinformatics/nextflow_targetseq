@@ -1,0 +1,11 @@
+# Entorno para los scripts de anotación de rutina en python3 (PyVCF) y R (argparse, tidyverse).
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pyvcf3=1.0.3
+  - r-base=4.3
+  - r-argparse
+  - r-tidyverse

@@ -2,6 +2,7 @@ include { GATK4_MUTECT2                                          } from '../modu
 include { GATK4_FILTERMUTECTCALLS                                } from '../modules/nf-core/gatk4/filtermutectcalls/main'
 include { BCFTOOLS_NORM as BCFTOOLS_NORM_MUTECT2                 } from '../modules/nf-core/bcftools/norm/main'
 include { BCFTOOLS_NORM as BCFTOOLS_NORM_LOFREQ                  } from '../modules/nf-core/bcftools/norm/main'
+include { INC_RESCUE_VARIANTS                                    } from '../incliva_modules'
 include { INC_SELECT_VARIANTS_GATK                               } from '../incliva_modules'
 include { INC_SELECT_VARIANTS_LOFREQ                             } from '../incliva_modules'
 include { INC_ANNOTATE_BAM_INFO as INC_ANNOTATE_BAM_INFO_MUTECT2 } from '../incliva_modules'
@@ -19,6 +20,15 @@ include { TABIX_TABIX as INDEX_LOFREQ_VCF                        } from '../modu
 include { LOFREQ_CALLPARALLEL                                    } from '../modules/nf-core/lofreq/callparallel/main'
 include { INC_ANNOTATE_FORMAT_LOFREQ                             } from '../incliva_modules'
 include { BCFTOOLS_CONCAT                                        } from '../modules/nf-core/bcftools/concat/main'
+include { INC_REFORMAT_GENOTYPE                                  } from '../incliva_modules'
+include { INC_TAG_RELIABLE as INC_TAG_RELIABLE_MUTECT2           } from '../incliva_modules'
+include { INC_TAG_RELIABLE as INC_TAG_RELIABLE_LOFREQ            } from '../incliva_modules'
+include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_TAG_MUTECT2       } from '../modules/nf-core/tabix/bgziptabix/main'
+include { TABIX_BGZIPTABIX as TABIX_BGZIPTABIX_TAG_LOFREQ        } from '../modules/nf-core/tabix/bgziptabix/main'
+include { INC_ADD_FMC_TAG                                        } from '../incliva_modules'
+include { INC_ADD_CSB_INFO                                       } from '../incliva_modules'
+include { BCFTOOLS_SORT as BCFTOOLS_SORT_FINAL                   } from '../modules/nf-core/bcftools/sort/main'
+include { INC_BCFTOOLS_MERGE                                     } from '../incliva_modules'
 
 
 workflow VARIANT_CALLING {
@@ -77,8 +87,12 @@ workflow VARIANT_CALLING {
     normalized_mutect2_variants = BCFTOOLS_NORM_MUTECT2.out.vcf
     versions = versions.mix(BCFTOOLS_NORM_MUTECT2.out.versions.first())
 
+    // Se guarda el FILTER original en FORMAT (FMC) y se rescatan las variantes con la etiqueta "haplotype"
+    INC_RESCUE_VARIANTS(normalized_mutect2_variants)
+    versions = versions.mix(INC_RESCUE_VARIANTS.out.versions.first())
+
     // Filtrar variantes por AD y AF y se añade "BAM = Clipped" INFO field
-    INC_SELECT_VARIANTS_GATK(normalized_mutect2_variants)
+    INC_SELECT_VARIANTS_GATK(INC_RESCUE_VARIANTS.out.rescued_variants)
     INC_ANNOTATE_BAM_INFO_MUTECT2(INC_SELECT_VARIANTS_GATK.out.selected_variants)
 
     versions = versions.mix(INC_ANNOTATE_BAM_INFO_MUTECT2.out.versions.first())
@@ -149,35 +163,79 @@ workflow VARIANT_CALLING {
     lofreq_vcf = sorted_lofreq_vcf.join(INDEX_LOFREQ_VCF.out.tbi)
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    PASO 4: Juntar VCFs creados // TODO - acabar esta parte de amplicones. Sacar bedtools del script de python. // TODO - Mirar sarek github issue #738
+    PASO 4: Juntar VCFs creados // TODO - Mirar sarek github issue #738
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
     if (params.amplicon) {
-        // TODO - python inc_gatk_realiable Low_confidence
-        // TODO - python inc_gatk_realiable High_confidence
-        calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map { m, vcf_m, tbi_m, vcf_l, tbi_l ->
+        // Variantes en zona de primers: Low_confidence para Mutect2 y High_confidence para Lofreq (REL en INFO)
+        def primers = file("${params.panel_design}/primers.bed", checkIfExists: true)
+
+        INC_TAG_RELIABLE_MUTECT2(sorted_mutect2_vcf, primers)
+        INC_TAG_RELIABLE_LOFREQ(sorted_lofreq_vcf, primers)
+        versions = versions
+            .mix(INC_TAG_RELIABLE_MUTECT2.out.versions.first())
+            .mix(INC_TAG_RELIABLE_LOFREQ.out.versions.first())
+
+        TABIX_BGZIPTABIX_TAG_MUTECT2(INC_TAG_RELIABLE_MUTECT2.out.tagged_variants)
+        TABIX_BGZIPTABIX_TAG_LOFREQ(INC_TAG_RELIABLE_LOFREQ.out.tagged_variants)
+
+        mutect2_vcf = TABIX_BGZIPTABIX_TAG_MUTECT2.out.gz_index
+        lofreq_vcf = TABIX_BGZIPTABIX_TAG_LOFREQ.out.gz_index
+    }
+
+    calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map { m, vcf_m, tbi_m, vcf_l, tbi_l ->
         [ m, [ vcf_m, vcf_l ], [ tbi_m, tbi_l ] ]
     }
-    
-        BCFTOOLS_CONCAT(calls_ch)
 
-        isected_vcf = BCFTOOLS_CONCAT.out.vcf
-        versions = versions.mix(BCFTOOLS_CONCAT.out.versions.first())
+    BCFTOOLS_CONCAT(calls_ch)
+    versions = versions.mix(BCFTOOLS_CONCAT.out.versions.first())
 
-    } else {
-    calls_ch = mutect2_vcf.join(lofreq_vcf, failOnMismatch: true).map { m, vcf_m, tbi_m, vcf_l, tbi_l ->
-            [ m, [ vcf_m, vcf_l ], [ tbi_m, tbi_l ] ]
+    // Se recalculan GT y AF a partir de AD y se filtra por AF y profundidad mínima
+    INC_REFORMAT_GENOTYPE(BCFTOOLS_CONCAT.out.vcf)
+    versions = versions.mix(INC_REFORMAT_GENOTYPE.out.versions.first())
+
+    // python inc_check_empty_vcf: no se incluye. Sólo actúa si el vcf no tiene ninguna línea, y tras el concat
+    // siempre queda al menos la cabecera.
+
+    // Se añaden las etiquetas originales de FilterMutectCalls (FMC, -1 si no la llamó Mutect2)
+    INC_ADD_FMC_TAG(INC_REFORMAT_GENOTYPE.out.reformatted_variants.join(INC_RESCUE_VARIANTS.out.rescued_variants, failOnMismatch: true))
+    versions = versions.mix(INC_ADD_FMC_TAG.out.versions.first())
+
+    // Se añade el strand bias de cada caller (cSB)
+    csb_input = INC_ADD_FMC_TAG.out.fmc_variants
+        .join(mutect2_vcf.map { meta, vcf, tbi -> [ meta, vcf ] }, failOnMismatch: true)
+        .join(lofreq_vcf.map { meta, vcf, tbi -> [ meta, vcf ] }, failOnMismatch: true)
+
+    INC_ADD_CSB_INFO(csb_input)
+    versions = versions.mix(INC_ADD_CSB_INFO.out.versions.first())
+
+    BCFTOOLS_SORT_FINAL(INC_ADD_CSB_INFO.out.csb_variants)
+
+    sample_vcf = BCFTOOLS_SORT_FINAL.out.vcf
+    versions = versions.mix(BCFTOOLS_SORT_FINAL.out.versions.first())
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    PASO 5: VCF multi-muestra (rutina.sh: bcftools merge -m none; con una sola muestra se usa su vcf)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+    // Las muestras se unen en el orden del samplesheet (rutina.sh: orden de "samples" en el config)
+    def sample_order = file(params.samplesheet).splitCsv(header: true)*.sample.unique()
+
+    all_vcfs = sample_vcf
+        .join(BCFTOOLS_SORT_FINAL.out.tbi, failOnMismatch: true)
+        .toSortedList { a, b -> sample_order.indexOf(a[0].sample) <=> sample_order.indexOf(b[0].sample) }
+        .map { files -> [ [ id: params.study_name ], files*.get(1), files*.get(2) ] }
+        .branch { meta, vcfs, tbis ->
+            multi:  vcfs.size() > 1
+            single: vcfs.size() == 1
         }
-        
-        BCFTOOLS_CONCAT(calls_ch)
 
-        isected_vcf = BCFTOOLS_CONCAT.out.vcf
-        versions = versions.mix(BCFTOOLS_CONCAT.out.versions.first())
-    }
+    INC_BCFTOOLS_MERGE(all_vcfs.multi)
+    versions = versions.mix(INC_BCFTOOLS_MERGE.out.versions)
 
-    // python inc_reformat_genotype
-    // python inc_check_empty_vcf
+    run_vcf = INC_BCFTOOLS_MERGE.out.vcf
+        .mix(all_vcfs.single.map { meta, vcfs, tbis -> [ meta, vcfs[0] ] })
 
     emit:
-    vcf = isected_vcf // VCF combinado por muestra (Mutect2 + LoFreq)
+    vcf     = sample_vcf // VCF combinado por muestra (Mutect2 + LoFreq)
+    run_vcf              // VCF multi-muestra de la carrera
     versions
 }

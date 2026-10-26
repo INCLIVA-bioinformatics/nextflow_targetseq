@@ -1,0 +1,9 @@
+# Entorno para los scripts de anotación de rutina que sólo funcionan con python2
+# (rutina.sh los lanza con /usr/bin/python2.7): inc_mv_cosmic_id_to_annotation, inc_add_conservation, inc_aa_3to1.
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=2.7
+  - pyvcf=0.6.8
