@@ -123,7 +123,7 @@ process INC_ANNOTATE_HOTSPOTS {
 // ==========================================
 // PROCESS: INC_SNPSIFT_ANNOTATE
 // ==========================================
-// SnpSift annotate (COSMIC, mixed_db, INCLIVA somatic y OncoKB). ext.args: opciones de SnpSift (p.ej. -info ...);
+// SnpSift annotate (COSMIC, mixed_db, INCLIVA somatic y OncoKB). Falla si SnpSift lanza una excepción (sale con 0). ext.args: opciones de SnpSift (p.ej. -info ...);
 // ext.suffix: sufijo del vcf de salida.
 process INC_SNPSIFT_ANNOTATE {
     tag "$meta.id"
@@ -153,7 +153,16 @@ process INC_SNPSIFT_ANNOTATE {
         ${args} \\
         ${database} \\
         ${vcf} \\
-        > ${prefix}_${suffix}.vcf
+        > ${prefix}_${suffix}.vcf \\
+        2> snpsift.log
+    cat snpsift.log >&2
+
+    # SnpSift sale con código 0 aunque se caiga a mitad (p.ej. base de datos truncada: "Invalid file pointer"),
+    # dejando un vcf incompleto: si hay una excepción de Java en el log, el proceso falla
+    if grep -q "Exception" snpsift.log; then
+        echo "ERROR: SnpSift annotate ha fallado con ${database} (vcf de salida incompleto)" >&2
+        exit 1
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

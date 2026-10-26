@@ -1,43 +1,71 @@
 # INCLIVA Target-seq pipeline (Nextflow)
 
-Pipeline de rutina para análisis de paneles de secuenciación dirigida (target-seq), adaptado a Nextflow (DSL2) a partir del script bash de rutina. Está basado en una versión modificada de nf-core/Sarek.
+Pipeline de rutina para análisis de paneles de secuenciación dirigida (target-seq), adaptado a Nextflow (DSL2) a partir del script bash de rutina (`rutina.sh`). Está basado en una versión modificada de nf-core/Sarek.
 
 **Versión:** 1.0.0
 
 ## Descripción
 
-El pipeline procesa FASTQ de paneles de genes y genera:
+El pipeline procesa FASTQ de paneles de genes en tres subworkflows:
 
-- Control de calidad y preprocesado de lecturas (FastQC, Cutadapt, Prinseq).
-- Mapeo y postprocesado del BAM (BWA-MEM2, Picard, GATK BQSR, LoFreq indelqual).
-- Llamada de variantes (Mutect2 y LoFreq), normalización y filtrado.
-- VCF final por muestra.
+1. **Preprocesado** (`subworkflows/preprocessing.nf`)
+   - FastQC sobre los FASTQ crudos.
+   - Cutadapt: eliminación de adaptadores y descarte de lecturas más cortas que `min_read_length`.
+   - Cutadapt: filtrado por primers (solo si `filter_by_primer = true`).
+   - Prinseq: trimado por calidad.
+   - FastQC sobre las lecturas preprocesadas.
+2. **Mapeo y postprocesado** (`subworkflows/mapping_postprocessing.nf`)
+   - BWA-MEM2 + filtro por calidad de mapeo (`samtools view -q min_mapping_quality`) y ordenación.
+   - Según el tipo de panel:
+     - **Amplicones** (`amplicon = true`): soft-clipping de primers con BAMClipper (no se eliminan duplicados).
+     - **Captura** (`amplicon = false`): eliminación de duplicados con Picard MarkDuplicates.
+   - Picard CleanSam.
+   - GATK BaseRecalibrator + ApplyBQSR (sobre el BAM completo).
+   - LoFreq indelqual.
+   - Profundidad en las regiones target (samtools depth) y generación de los BED de regiones cubiertas y no cubiertas a la cobertura mínima `cov`.
+3. **Llamada de variantes** (`subworkflows/variant_calling.nf`)
+   - Mutect2 + FilterMutectCalls y LoFreq.
+   - Normalización, selección de variantes, anotación con información del BAM, ordenación e indexado.
+   - Unión de los VCF de ambos callers en un VCF final por muestra.
 
-<!-- TODO: completar con anotación (VEP, etc.) si aplica en esta versión -->
+Para reproducir los resultados de la rutina bash se fijan las mismas versiones de GATK (4.4.0.0) y LoFreq (2.1.3.1), el mismo read group (`ID:AgilentXTHS`) y el tamaño de lote de BWA-MEM2 (`-K`), de modo que el resultado no depende del número de CPUs.
 
 ## Requisitos
 
-- Linux con Slurm (o el executor que se use en el clúster).
+- Linux con Slurm (executor definido en `config/base.config`).
 - [Nextflow](https://www.nextflow.io/) (DSL2).
-- Conda/Mamba, y Singularity (o Docker).
+- Conda/Mamba y Singularity (o Docker).
 - Entorno conda: `sarek_nf`.
-- Referencias del genoma (hg38) y ficheros del panel, definidos en el fichero de configuración del panel.
+- Referencias del genoma (GRCh38) y ficheros del panel, definidos en el fichero de configuración del panel.
 
 ## Estructura del repositorio
 
 ```text
 .
 ├── workflow_targetseq.nf      # Workflow principal
-├── conf/                      # Configuración de módulos/procesos
-├── modules/                   # Módulos
-├── subworkflows/              # Subworkflows
+├── incliva_modules.nf         # Procesos propios de INCLIVA
+├── config/
+│   └── base.config            # Recursos, argumentos y publishDir de cada proceso
+├── modules/
+│   ├── incliva/               # Módulos propios o adaptados
+│   ├── local/                 # Módulos locales heredados de Sarek
+│   └── nf-core/               # Módulos de nf-core
+├── subworkflows/              # preprocessing, mapping_postprocessing, variant_calling
 ├── panels/
-│   └── panel_configs/         # Plantillas de configuración por panel
-│   └── panel_designs/         # Configuración por panel
+│   ├── panel_configs/         # Configuración por panel (conf_<PANEL>.config)
+│   └── panel_designs/         # Diseño de cada panel (BED, primers, amplicones)
 └── test_data/                 # FASTQ y samplesheet de test (panel TOX3)
 ```
 
-<!-- TODO: ajustar a la estructura real -->
+## Paneles disponibles
+
+| Panel | Tipo       | Filtrado por primers | Eliminación duplicados / clipping | Config                                  |
+|-------|------------|----------------------|-----------------------------------|-----------------------------------------|
+| TOX3  | Amplicones | Sí (error 0.3)       | BAMClipper (19/19)                | `panels/panel_configs/conf_TOX3.config` |
+| BRC2  | Amplicones | Sí (error 0.2)       | BAMClipper (18/18)                | `panels/panel_configs/conf_BRC2.config` |
+| ONC4  | Captura    | No                   | Picard MarkDuplicates             | `panels/panel_configs/conf_ONC4.config` |
+
+Cada diseño en `panels/panel_designs/<PANEL>/` contiene, entre otros, `capture.bed`, `target.bed` y, para paneles de amplicones, `R1_primers.fasta`, `R2_primers.fasta` y `amplicons.pe.bed` (usado por BAMClipper).
 
 ## Lanzar el pipeline en el clúster
 
@@ -49,8 +77,8 @@ Crea un script bash, por ejemplo `run_pipeline.sh`:
 #SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=199G
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
 #SBATCH --time=48:00:00
 #SBATCH --output=targetseq_%j.out
 #SBATCH --error=targetseq_%j.err
@@ -59,9 +87,9 @@ source /mnt/zonahpc/home/bioinformatica/comun/software/miniconda3/etc/profile.d/
 conda activate sarek_nf
 
 nextflow run /ruta/al/repo/workflow_targetseq.nf \
-    -c /ruta/al/repo/panels/panel_configs/<panel>.config \
-    -profile singularity 
-    ```
+    -c /ruta/al/repo/panels/panel_configs/conf_<PANEL>.config \
+    -profile singularity
+```
 
 Y lánzalo con:
 
@@ -69,21 +97,23 @@ Y lánzalo con:
 sbatch run_pipeline.sh
 ```
 
-> El job de Nextflow solo coordina. Los procesos se envían a Slurm según el executor definido en la configuración.
+> El job de Nextflow solo coordina: cada proceso se envía a Slurm como un job independiente según el executor y los recursos definidos en `config/base.config`. Por eso el job principal necesita pocos recursos.
+
+Para retomar una ejecución interrumpida, añade `-resume` al comando.
 
 ## Test con el panel TOX3
 
-El repositorio incluye FASTQ de test del panel TOX3. Para lanzarlo:
+El repositorio incluye FASTQ de test del panel TOX3 (`test_data/rawdata_test/TOX3/`) y su samplesheet (`test_data/samplesheet_TOX3.csv`), que ya está referenciado en `conf_TOX3.config`. Para lanzarlo:
 
 ```bash
 conda activate sarek_nf
 
 nextflow run workflow_targetseq.nf \
-    -c conf_tox3.config \
+    -c panels/panel_configs/conf_TOX3.config \
     -profile singularity
 ```
 
-<!-- TODO: confirmar nombres de ficheros y parámetros -->
+Los resultados se escriben en `TOX3_outdir/` dentro del directorio de lanzamiento.
 
 ## Analizar otras muestras
 
@@ -91,49 +121,62 @@ nextflow run workflow_targetseq.nf \
 
 Crea un `samplesheet.csv` con las siguientes columnas:
 
-| Columna   | Descripción                              |
-|-----------|------------------------------------------|
-| `patient` | ID del paciente                          |
-| `status`  | Estado de la muestra (`<TODO valores>`)  |
-| `sample`  | ID de la muestra                         |
-| `lane`    | Lane de secuenciación                    |
-| `fastq_1` | Ruta absoluta al FASTQ R1                |
-| `fastq_2` | Ruta absoluta al FASTQ R2                |
+| Columna   | Descripción                                        |
+|-----------|----------------------------------------------------|
+| `patient` | ID del paciente                                    |
+| `status`  | Estado de la muestra (`0` = normal, `1` = tumor)   |
+| `sample`  | ID de la muestra                                   |
+| `lane`    | Lane de secuenciación                              |
+| `fastq_1` | Ruta absoluta al FASTQ R1                          |
+| `fastq_2` | Ruta absoluta al FASTQ R2                          |
 
 Ejemplo:
 
 ```csv
 patient,status,sample,lane,fastq_1,fastq_2
-P1,0,TOX3-DDPD-1119,L001,/ruta/muestra1_R1.fastq.gz,/ruta/muestra1_R2.fastq.gz
-P2,0,TOX3-DDPD-1121,L001,/ruta/muestra2_R1.fastq.gz,/ruta/muestra2_R2.fastq.gz
+TOX3-DDPD-1119,1,TOX3-DDPD-1119_S3,1,/ruta/TOX3-DDPD-1119_S3_L001_R1_001.fastq.gz,/ruta/TOX3-DDPD-1119_S3_L001_R2_001.fastq.gz
+TOX3-DDPD-1120,1,TOX3-DDPD-1120_S4,1,/ruta/TOX3-DDPD-1120_S4_L001_R1_001.fastq.gz,/ruta/TOX3-DDPD-1120_S4_L001_R2_001.fastq.gz
 ```
 
 ### 2. Fichero de configuración del panel
 
-Selecciona el fichero de configuración que corresponda al panel que quieres analizar. Las plantillas están en:
+Copia la configuración del panel que quieres analizar desde `panels/panel_configs/` y edita al menos:
 
-```text
-panels/panel_configs/
-```
+- `samplesheet`: ruta al samplesheet.
+- `study_name`: nombre del estudio/run.
+- `outdir`: directorio de salida.
 
-Copia la plantilla y edita: samplesheet, study_name y out_dir.
+Parámetros de procesado principales (ya ajustados para cada panel):
+
+| Parámetro             | Descripción                                                      |
+|-----------------------|------------------------------------------------------------------|
+| `amplicon`            | `true` para paneles de amplicones (BAMClipper), `false` para captura (MarkDuplicates) |
+| `filter_by_primer`    | Filtrar lecturas por primers con Cutadapt                        |
+| `cut_primer_error` / `cut_primer_overlap` | Tolerancia y solapamiento mínimo del filtrado por primers |
+| `min_read_length`     | Longitud mínima de lectura tras el trimado                       |
+| `min_trim_qual`       | Calidad mínima para el trimado con Prinseq                       |
+| `min_mapping_quality` | MAPQ mínima tras el mapeo                                        |
+| `up_bamclip` / `down_bamclip` | Ventana upstream/downstream de BAMClipper                |
+| `cov` / `af`          | Cobertura mínima y frecuencia alélica mínima                     |
+| `has_umi`             | Uso de UMIs (todavía no implementado)                            |
 
 ## Salida
 
-Dentro de `--outdir`:
+Dentro de `outdir`:
 
-| Directorio      | Contenido                                  |
-|-----------------|--------------------------------------------|
-| `mapping/`      | BAM y BAI por muestra  y `versions.yml`    |
-| `QC/rawdata`    | fastqc html y zip por muestra              |
-| `variant_calling/` | VCF por muestra y `versions.yml`        |
-| `pipeline_info/`| Informes de ejecución de Nextflow          |
+| Directorio          | Contenido                                                       |
+|---------------------|-----------------------------------------------------------------|
+| `QC/rawdata/`       | Informes FastQC (html y zip) por muestra                         |
+| `QC/mapping/`       | BED de regiones cubiertas y no cubiertas a `cov` x por muestra (`<sample>_covered_regions_<cov>x.bed`, `<sample>_non_covered_<cov>x.bed`) |
+| `mapping/`          | BAM y BAI finales por muestra y `versions.yml`                   |
+| `variant_calling/`  | VCF final por muestra                                            |
+| `pipeline_info/`    | Informes de ejecución de Nextflow (report, timeline, trace, DAG) |
+
+Por defecto los ficheros se publican como enlaces simbólicos (`publish_dir_mode = "symlink"`) al directorio `work/`. Si se va a borrar `work/`, usa `publish_dir_mode = "copy"`.
 
 ## Configuración del entorno
 
-Los paths de caché de Singularity y Conda dependen de cada clúster. No están incluidos en el repositorio.
-
-Cada usuario debe configurarlos en su `nextflow.config` local (por ejemplo `~/.nextflow/config` o un `nextflow.local.config` que no se sube a Git):
+Los paths de caché de Singularity y Conda dependen de cada clúster. Las configuraciones de panel incluyen los del clúster de INCLIVA; si trabajas en otro entorno, ajústalos en la config del panel o en tu `nextflow.config` local (por ejemplo `~/.nextflow/config`):
 
 ```groovy
 singularity {
@@ -151,14 +194,29 @@ conda {
 
 Asegúrate de que los directorios de caché existen y son accesibles desde los nodos de cómputo.
 
-## Paths databases
-Puedes encontrar los paths para las bases de datos en el clúster: /mnt/zonahpc/home/bioinformatica/comun/software/targetseq_pipeline/databases
+## Bases de datos y referencias
+
+Las bases de datos están en el clúster (no se suben a Git):
+
+- `/mnt/zonahpc/home/bioinformatica/comun/databases`
+  - Genoma de referencia e índice BWA-MEM2: `bwa_mem2/Homo_sapiens.GRCh38.fa` (+ `.fai`, `.dict` e índices).
+  - Mills and 1000G gold standard indels (hg38).
+  - `inc_db.vcf` (base de datos interna).
+  - dbSNP 153: `dbSNP/153/All_20200219.vcf.gz`
+  - Anotación (todos con su `.tbi`):
+    - Caché de VEP 110 (con `Plugins/`): `v110_last/`
+    - SpliceAI: `SpliceAI/spliceai_scores.raw.{snv,indel}.hg38.vcf.gz`
+    - Cancer hotspots: `cancer_hotspots/20180723/cancerhospots.bed.gz`
+    - COSMIC v91: `cosmicv91/AllMutations_COSMIC_v91.vcf.gz`
+    - Mixed DB: `DB/mixed_db.vcf.gz`
+    - OncoKB: `dbSNP155.cosmic.oncokb.noIDs.vcf.gz`
 
 ## Room for improvement (próximas versiones)
 
 Este pipeline es una adaptación inicial a Nextflow (DSL2) de la rutina bash. Las siguientes mejoras están previstas para futuras versiones:
 
-- **Configuraciones de más paneles.** Actualmente solo se incluye la configuración de TOX3. Se añadirán las configs de ONC4, BRC2 y otros paneles usados en la rutina.
+- **Más paneles.** Actualmente se incluyen TOX3, BRC2 y ONC4. Se añadirán el resto de paneles usados en la rutina.
 - **Módulo de estadísticas.** Implementar un proceso/subworkflow que genere las mismas estadísticas que la rutina (cobertura por región, lecturas mapeadas, duplicados, inserción, etc.) y los plots asociados.
-- **Soporte completo de UMIs.** Añadir el manejo de UMIs (umitools o fgbio) en preprocesado y deduplicación, con parámetros `has_umi` y `umi_nt` equivalentes a la rutina.
-- **VCFs anotados.** Actualmente el pipeline obtiene los VCF sin anotar; añadir los VCF anotados y los CSV por muestra.
+- **Soporte completo de UMIs.** Añadir el manejo de UMIs (umi_tools o fgbio) en preprocesado y deduplicación, con parámetros `has_umi` y `umi_nt` equivalentes a la rutina.
+- **Combinación de VCFs en amplicones.** Completar la lógica de confianza (High/Low confidence) entre Mutect2 y LoFreq de la rutina.
+- **VCFs anotados.** Actualmente el pipeline obtiene los VCF sin anotar; añadir los VCF anotados (VEP) y los CSV por muestra.

@@ -66,6 +66,7 @@ include { PREPROCESSING          } from './subworkflows/preprocessing'
 include { MAPPING_POSTPROCESSING } from './subworkflows/mapping_postprocessing'
 include { VARIANT_CALLING        } from './subworkflows/variant_calling'
 include { STATISTICS             } from './subworkflows/statistics'
+include { ANNOTATION             } from './subworkflows/annotation'
 
 workflow {
 
@@ -222,6 +223,19 @@ workflow {
     )
 
     versions = VARIANT_CALLING.out.versions
+
+    // Anotación y csv de variantes: requiere las bases de datos de rutina (caché de VEP, SpliceAI, COSMIC...)
+    if (params.vep_cache) {
+        ANNOTATION(
+            VARIANT_CALLING.out.run_vcf,
+            fasta,
+            versions
+        )
+
+        versions = ANNOTATION.out.versions
+    } else {
+        log.warn "No se ha indicado --vep_cache: se omite la anotación (vcf y csv anotados, sample_contamination)"
+    }
 
     STATISTICS(
         samples,
