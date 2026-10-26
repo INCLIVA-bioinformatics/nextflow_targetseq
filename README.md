@@ -1,3 +1,5 @@
+<p align="center"><img src="/mnt/zonahpc/home/bioinformatica/comun/software/targetseq_pipeline/workflow_targetseq.nf" width="600"></p>
+
 # INCLIVA Target-seq pipeline (Nextflow)
 
 Pipeline de rutina para análisis de paneles de secuenciación dirigida (target-seq), adaptado a Nextflow (DSL2) a partir del script bash de rutina (`inc_pipe_for_panels_only_tumors.sh`). Está basado en una versión modificada de nf-core/Sarek.

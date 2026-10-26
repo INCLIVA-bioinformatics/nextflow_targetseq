@@ -6,8 +6,8 @@
     directorios utilizada en nf-core. También utiliza, cuando es posible, módulos desarrollados para éste. Además, toma
     algunas de las funciones desarrolladas para sarek.
 
-    Versión: 1.0.0
-    Fecha: 06/10/2026
+    Versión: 1.2.0
+    Fecha: 26/10/2026
     Autores: Unidad de Bioinformatica de INCLIVA
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
